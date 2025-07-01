@@ -1,7 +1,12 @@
-from flask import Flask, request, Response
+from flask import Flask, send_file, abort
+import os
 import requests
 
 app = Flask(__name__)
+CACHE_DIR = "cache"
+
+# Создаем папку кеша, если нет
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 COOKIE = {'uid': 'AAAAEWg1iHsI3zABAwOuAg=='}
 HEADERS = {
@@ -12,15 +17,28 @@ HEADERS = {
     'Connection': 'keep-alive',
 }
 
+def tile_path(z, x, y):
+    return os.path.join(CACHE_DIR, f"{z}_{x}_{y}.png")
+
 @app.route('/tiles/<int:z>/<int:x>/<int:y>.png')
 def proxy_tile(z, x, y):
+    path = tile_path(z, x, y)
+    if os.path.isfile(path):
+        # Если тайл есть в кэше — отдаем его
+        return send_file(path, mimetype='image/png')
+
+    # Иначе скачиваем тайл
     url = f'https://proxy.nakarte.me/http/nakartetiles.s3-website.eu-central-1.amazonaws.com/{z}/{x}/{y}.png'
     try:
         resp = requests.get(url, cookies=COOKIE, headers=HEADERS, timeout=10)
         resp.raise_for_status()
-        return Response(resp.content, content_type=resp.headers.get('Content-Type', 'image/png'))
+        # Сохраняем в кэш
+        with open(path, 'wb') as f:
+            f.write(resp.content)
+        return send_file(path, mimetype='image/png')
     except requests.RequestException as e:
-        return f"Error fetching tile: {e}", 500
+        abort(404, description=f"Tile not found: {e}")
 
 if __name__ == '__main__':
-    app.run(port=5000)
+    # Делаем сервер доступным в локальной сети
+    app.run(host='0.0.0.0', port=5000)
