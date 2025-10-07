@@ -1,0 +1,1 @@
+web: gunicorn rogaining_nakatre:app
